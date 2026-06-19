@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>오목 온라인</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #1a1a2e;
+    color: #eee;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  #app { width: 100%; max-width: 480px; padding: 16px; }
+
+  .screen { display: none; }
+  .screen.active { display: block; }
+
+  /* LOBBY */
+  .logo {
+    text-align: center;
+    padding: 40px 0 32px;
+  }
+  .logo h1 {
+    font-size: 42px;
+    font-weight: 800;
+    letter-spacing: -1px;
+    background: linear-gradient(135deg, #e94560, #0f3460);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .logo p { color: #888; font-size: 14px; margin-top: 6px; }
+
+  .card {
+    background: #16213e;
+    border-radius: 16px;
+    padding: 24px;
+    margin-bottom: 16px;
+    border: 1px solid #0f3460;
+  }
+  .card h2 { font-size: 16px; font-weight: 600; margin-bottom: 16px; color: #ccc; }
+
+  input[type=text] {
+    width: 100%;
+    background: #0f3460;
+    border: 1px solid #1a4a8a;
+    border-radius: 10px;
+    color: #fff;
+    font-size: 18px;
+    padding: 12px 16px;
+    letter-spacing: 6px;
+    text-align: center;
+    text-transform: uppercase;
+    outline: none;
+  }
+  input[type=text]:focus { border-color: #e94560; }
+  input[type=text]::placeholder { letter-spacing: 2px; color: #555; font-size: 14px; }
+
+  .name-input {
+    letter-spacing: 0 !important;
+    text-align: left !important;
+    font-size: 15px !important;
+    margin-bottom: 12px;
+  }
+
+  .btn {
+    width: 100%;
+    padding: 14px;
+    border-radius: 10px;
+    border: none;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.2s, transform 0.1s;
+  }
+  .btn:active { transform: scale(0.97); }
+  .btn-primary { background: #e94560; color: #fff; }
+  .btn-secondary { background: #0f3460; color: #ccc; margin-top: 10px; }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .divider { text-align: center; color: #444; font-size: 13px; margin: 8px 0; }
+
+  /* WAITING */
+  .room-code-display {
+    text-align: center;
+    padding: 20px;
+  }
+  .room-code-display .code {
+    font-size: 48px;
+    font-weight: 800;
+    letter-spacing: 10px;
+    color: #e94560;
+    margin: 10px 0;
+  }
+  .room-code-display p { color: #888; font-size: 13px; }
+
+  .status-dot {
+    display: inline-block;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #e94560;
+    margin-right: 8px;
+    animation: pulse 1.2s infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  .player-list { margin-top: 16px; }
+  .player-item {
+    display: flex; align-items: center;
+    padding: 12px;
+    background: #0f3460;
+    border-radius: 10px;
+    margin-bottom: 8px;
+    font-size: 14px;
+  }
+  .stone {
+    width: 20px; height: 20px;
+    border-radius: 50%;
+    margin-right: 10px;
+    flex-shrink: 0;
+  }
+  .stone.black { background: #111; border: 2px solid #555; }
+  .stone.white { background: #fff; border: 2px solid #ccc; }
+  .stone.empty { background: #1a4a8a; border: 2px dashed #555; }
+
+  /* GAME */
+  #game-screen { padding-bottom: 20px; }
+
+  .game-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 0;
+    margin-bottom: 8px;
+  }
+  .player-badge {
+    display: flex; align-items: center;
+    background: #16213e;
+    border-radius: 10px;
+    padding: 8px 12px;
+    font-size: 13px;
+    border: 1px solid #0f3460;
+    flex: 1;
+  }
+  .player-badge.active { border-color: #e94560; background: #1e0a15; }
+  .player-badge:first-child { margin-right: 6px; }
+  .player-badge:last-child { margin-left: 6px; }
+  .player-badge .stone { width: 16px; height: 16px; margin-right: 8px; }
+  .player-badge .pname { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 80px; }
+  .player-badge .you { font-size: 10px; color: #e94560; margin-left: 4px; }
+
+  .turn-label {
+    font-size: 11px; color: #888; text-align: center;
+    min-width: 60px;
+  }
+  .turn-label span { display: block; font-size: 13px; font-weight: 600; color: #e94560; }
+
+  .board-wrap {
+    position: relative;
+    width: 100%;
+    padding-bottom: 100%;
+    background: #C8A96E;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+  }
+  canvas {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    touch-action: none;
+  }
+
+  .msg-bar {
+    text-align: center;
+    padding: 10px;
+    font-size: 13px;
+    color: #aaa;
+    min-height: 36px;
+  }
+  .msg-bar.win { color: #e94560; font-weight: 700; font-size: 16px; }
+
+  #btn-leave {
+    background: transparent;
+    border: 1px solid #333;
+    color: #666;
+    font-size: 13px;
+    padding: 10px;
+    margin-top: 8px;
+  }
+
+  /* MODAL */
+  .modal-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.8);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+  }
+  .modal-backdrop.open { display: flex; }
+  .modal {
+    background: #16213e;
+    border-radius: 20px;
+    padding: 32px 24px;
+    text-align: center;
+    border: 1px solid #0f3460;
+    max-width: 320px;
+    width: 90%;
+  }
+  .modal h2 { font-size: 28px; margin-bottom: 8px; }
+  .modal p { color: #888; font-size: 14px; margin-bottom: 24px; }
+
+  .copy-btn {
+    background: #0f3460;
+    border: none;
+    color: #aaa;
+    font-size: 12px;
+    padding: 6px 14px;
+    border-radius: 20px;
+    cursor: pointer;
+    margin-top: 8px;
+    display: inline-block;
+  }
+
+  #toast {
+    position: fixed;
+    bottom: 30px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #e94560;
+    color: #fff;
+    padding: 10px 24px;
+    border-radius: 20px;
+    font-size: 14px;
+    opacity: 0;
+    transition: opacity 0.3s;
+    z-index: 200;
+    pointer-events: none;
+  }
+  #toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<div id="app">
+
+<!-- LOBBY -->
+<div id="lobby-screen" class="screen active">
+  <div class="logo">
+    <h1>⚫ 오목</h1>
+    <p>친구와 함께 즐기는 온라인 오목</p>
+  </div>
+
+  <div class="card">
+    <h2>내 이름</h2>
+    <input type="text" id="input-name" class="name-input" placeholder="닉네임 입력" maxlength="10">
+    <button class="btn btn-primary" id="btn-create">새 방 만들기</button>
+    <div class="divider">또는</div>
+    <input type="text" id="input-code" placeholder="방 코드 입력 (4자리)" maxlength="4">
+    <button class="btn btn-secondary" id="btn-join" style="margin-top:10px">방 참가하기</button>
+  </div>
+</div>
+
+<!-- WAITING -->
+<div id="waiting-screen" class="screen">
+  <div class="logo">
+    <h1>⚫ 오목</h1>
+  </div>
+  <div class="card">
+    <div class="room-code-display">
+      <p style="color:#888;font-size:13px">방 코드를 친구에게 알려주세요</p>
+      <div class="code" id="display-code">----</div>
+      <button class="copy-btn" id="btn-copy-code">📋 코드 복사</button>
+    </div>
+    <div class="player-list" id="player-list"></div>
+    <div style="margin-top:16px;text-align:center;color:#888;font-size:13px">
+      <span class="status-dot"></span>친구가 접속하면 자동으로 시작됩니다
+    </div>
+  </div>
+  <button class="btn" id="btn-leave-lobby" style="background:transparent;border:1px solid #333;color:#666;font-size:13px">나가기</button>
+</div>
+
+<!-- GAME -->
+<div id="game-screen" class="screen">
+  <div class="game-header">
+    <div class="player-badge" id="badge-black">
+      <div class="stone black"></div>
+      <span class="pname" id="name-black">-</span>
+      <span class="you" id="you-black" style="display:none">나</span>
+    </div>
+    <div class="turn-label">
+      <span id="turn-text">흑 차례</span>
+      차례
+    </div>
+    <div class="player-badge" id="badge-white">
+      <div class="stone white"></div>
+      <span class="pname" id="name-white">-</span>
+      <span class="you" id="you-white" style="display:none">나</span>
+    </div>
+  </div>
+
+  <div class="board-wrap">
+    <canvas id="board"></canvas>
+  </div>
+
+  <div class="msg-bar" id="msg-bar">상대방의 접속을 기다리는 중...</div>
+  <button class="btn" id="btn-leave">방 나가기</button>
+</div>
+
+</div><!-- #app -->
+
+<div class="modal-backdrop" id="result-modal">
+  <div class="modal">
+    <h2 id="modal-title">🎉</h2>
+    <p id="modal-msg"></p>
+    <button class="btn btn-primary" id="btn-play-again">한판 더!</button>
+    <button class="btn btn-secondary" id="btn-lobby">로비로</button>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<!-- Firebase SDK -->
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { getDatabase, ref, set, get, onValue, update, remove, onDisconnect }
+  from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
+
+// ── Firebase 설정 ──────────────────────────────────────────────
+// 아래 firebaseConfig를 본인의 Firebase 프로젝트 설정으로 교체하세요.
+// Firebase Console → 프로젝트 설정 → 앱 추가(웹) → SDK 설정에서 복사
+// ──────────────────────────────────────────────────────────────
+const firebaseConfig = {
+  apiKey: "AIzaSyDFPjyfQ4Ys0S-9_44ZREdG2-tkJCtBbmY",
+  authDomain: "omok-game-53c37.firebaseapp.com",
+  databaseURL: "https://omok-game-53c37-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "omok-game-53c37",
+  storageBucket: "omok-game-53c37.firebasestorage.app",
+  messagingSenderId: "347645103148",
+  appId: "1:347645103148:web:13303c0028ce0db93d1589"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+
+// ── 상수 ──────────────────────────────────────────────────────
+const BOARD = 15;
+
+// ── 상태 ──────────────────────────────────────────────────────
+let myId = Math.random().toString(36).slice(2, 10);
+let myName = '';
+let roomCode = '';
+let myRole = null; // 'black' | 'white'
+let roomRef = null;
+let unsubRoom = null;
+let gameOver = false;
+
+// ── UI 헬퍼 ───────────────────────────────────────────────────
+function show(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2000);
+}
+
+// ── 방 코드 생성 ───────────────────────────────────────────────
+function genCode() {
+  return Math.random().toString(36).slice(2, 6).toUpperCase();
+}
+
+// ── 로비 버튼 ─────────────────────────────────────────────────
+document.getElementById('btn-create').addEventListener('click', async () => {
+  myName = document.getElementById('input-name').value.trim() || '흑돌';
+  roomCode = genCode();
+  myRole = 'black';
+  roomRef = ref(db, 'rooms/' + roomCode);
+
+  const initData = {
+    black: { id: myId, name: myName },
+    white: null,
+    board: Array(BOARD * BOARD).fill(0),
+    turn: 'black',
+    winner: null,
+    created: Date.now()
+  };
+  await set(roomRef, initData);
+  onDisconnect(roomRef).remove();
+
+  document.getElementById('display-code').textContent = roomCode;
+  show('waiting-screen');
+  listenRoom();
+});
+
+document.getElementById('btn-join').addEventListener('click', async () => {
+  myName = document.getElementById('input-name').value.trim() || '백돌';
+  const code = document.getElementById('input-code').value.trim().toUpperCase();
+  if (code.length !== 4) { toast('방 코드는 4자리입니다'); return; }
+
+  const snap = await get(ref(db, 'rooms/' + code));
+  if (!snap.exists()) { toast('존재하지 않는 방입니다'); return; }
+  const data = snap.val();
+  if (data.white) { toast('이미 가득 찬 방입니다'); return; }
+
+  roomCode = code;
+  myRole = 'white';
+  roomRef = ref(db, 'rooms/' + roomCode);
+  await update(roomRef, { white: { id: myId, name: myName } });
+
+  document.getElementById('display-code').textContent = roomCode;
+  show('waiting-screen');
+  listenRoom();
+});
+
+// ── 방 구독 ───────────────────────────────────────────────────
+function listenRoom() {
+  if (unsubRoom) unsubRoom();
+  unsubRoom = onValue(roomRef, snap => {
+    if (!snap.exists()) { goLobby(); return; }
+    const data = snap.val();
+    handleRoomData(data);
+  });
+}
+
+function handleRoomData(data) {
+  const black = data.black;
+  const white = data.white;
+
+  // 대기 화면 플레이어 목록
+  if (document.getElementById('waiting-screen').classList.contains('active')) {
+    const list = document.getElementById('player-list');
+    list.innerHTML = '';
+    const bItem = document.createElement('div');
+    bItem.className = 'player-item';
+    bItem.innerHTML = `<div class="stone black"></div>${black ? black.name : '대기 중...'}${myRole==='black'?' (나)':''}`;
+    list.appendChild(bItem);
+    const wItem = document.createElement('div');
+    wItem.className = 'player-item';
+    wItem.innerHTML = `<div class="stone ${white?'white':'empty'}"></div>${white ? white.name : '대기 중...'}${myRole==='white'?' (나)':''}`;
+    list.appendChild(wItem);
+  }
+
+  // 둘 다 접속 시 게임 시작
+  if (black && white) {
+    initGameUI(data);
+    if (document.getElementById('waiting-screen').classList.contains('active')) {
+      show('game-screen');
+    }
+    renderGame(data);
+  }
+}
+
+// ── 게임 UI 초기화 ─────────────────────────────────────────────
+function initGameUI(data) {
+  const b = data.black, w = data.white;
+  document.getElementById('name-black').textContent = b.name;
+  document.getElementById('name-white').textContent = w.name;
+  document.getElementById('you-black').style.display = myRole === 'black' ? 'inline' : 'none';
+  document.getElementById('you-white').style.display = myRole === 'white' ? 'inline' : 'none';
+}
+
+// ── 보드 그리기 ───────────────────────────────────────────────
+const canvas = document.getElementById('board');
+const ctx = canvas.getContext('2d');
+let cellSize = 0;
+let boardPad = 0;
+
+function setupCanvas() {
+  const size = canvas.parentElement.offsetWidth;
+  canvas.width = size;
+  canvas.height = size;
+  cellSize = size / (BOARD + 1);
+  boardPad = cellSize;
+}
+
+function drawBoard(boardArr, lastMove) {
+  setupCanvas();
+  const s = canvas.width;
+  ctx.clearRect(0, 0, s, s);
+
+  // 배경
+  ctx.fillStyle = '#C8A96E';
+  ctx.fillRect(0, 0, s, s);
+
+  // 격자
+  ctx.strokeStyle = '#8B6914';
+  ctx.lineWidth = 0.8;
+  for (let i = 0; i < BOARD; i++) {
+    const x = boardPad + i * cellSize;
+    ctx.beginPath(); ctx.moveTo(x, boardPad); ctx.lineTo(x, boardPad + (BOARD-1)*cellSize); ctx.stroke();
+    const y = boardPad + i * cellSize;
+    ctx.beginPath(); ctx.moveTo(boardPad, y); ctx.lineTo(boardPad + (BOARD-1)*cellSize, y); ctx.stroke();
+  }
+
+  // 화점
+  const dots = [3,7,11];
+  ctx.fillStyle = '#8B6914';
+  for (const r of dots) for (const c of dots) {
+    ctx.beginPath();
+    ctx.arc(boardPad + c*cellSize, boardPad + r*cellSize, cellSize*0.08, 0, Math.PI*2);
+    ctx.fill();
+  }
+
+  // 돌
+  for (let i = 0; i < BOARD * BOARD; i++) {
+    if (!boardArr[i]) continue;
+    const row = Math.floor(i / BOARD), col = i % BOARD;
+    const cx = boardPad + col * cellSize;
+    const cy = boardPad + row * cellSize;
+    const r = cellSize * 0.44;
+
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    if (boardArr[i] === 1) {
+      ctx.fillStyle = '#111';
+      ctx.fill();
+      ctx.strokeStyle = '#444';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = '#f5f5f5';
+      ctx.fill();
+      ctx.strokeStyle = '#ccc';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+
+    // 마지막 수 표시
+    if (lastMove === i) {
+      ctx.beginPath();
+      ctx.arc(cx, cy, r * 0.35, 0, Math.PI * 2);
+      ctx.fillStyle = boardArr[i] === 1 ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.4)';
+      ctx.fill();
+    }
+  }
+}
+
+function renderGame(data) {
+  const board = data.board || Array(BOARD*BOARD).fill(0);
+  drawBoard(board, data.lastMove ?? -1);
+  gameOver = !!data.winner;
+
+  // 배지 강조
+  const myTurn = data.turn === myRole && !gameOver;
+  document.getElementById('badge-black').classList.toggle('active', data.turn === 'black' && !gameOver);
+  document.getElementById('badge-white').classList.toggle('active', data.turn === 'white' && !gameOver);
+  document.getElementById('turn-text').textContent = data.turn === 'black' ? '⚫ 흑' : '⚪ 백';
+
+  // 메시지
+  const msg = document.getElementById('msg-bar');
+  if (data.winner) {
+    const winName = data.winner === 'black' ? data.black.name : data.white.name;
+    msg.textContent = `🎉 ${winName} 승리!`;
+    msg.className = 'msg-bar win';
+    showResultModal(data);
+  } else if (!data.black || !data.white) {
+    msg.textContent = '상대방의 접속을 기다리는 중...';
+    msg.className = 'msg-bar';
+  } else if (myTurn) {
+    msg.textContent = '내 차례입니다. 돌을 놓으세요!';
+    msg.className = 'msg-bar';
+  } else {
+    const oppName = data.turn === 'black' ? data.black?.name : data.white?.name;
+    msg.textContent = `${oppName || '상대방'}이 생각 중...`;
+    msg.className = 'msg-bar';
+  }
+}
+
+// ── 클릭/터치 처리 ────────────────────────────────────────────
+canvas.addEventListener('click', handleTap);
+canvas.addEventListener('touchend', e => {
+  e.preventDefault();
+  const t = e.changedTouches[0];
+  const rect = canvas.getBoundingClientRect();
+  handleTap({ clientX: t.clientX, clientY: t.clientY, _fromTouch: true });
+}, { passive: false });
+
+async function handleTap(e) {
+  if (gameOver) return;
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const px = (e.clientX - rect.left) * scaleX;
+  const py = (e.clientY - rect.top) * scaleY;
+
+  const col = Math.round((px - boardPad) / cellSize);
+  const row = Math.round((py - boardPad) / cellSize);
+  if (col < 0 || col >= BOARD || row < 0 || row >= BOARD) return;
+
+  const snap = await get(roomRef);
+  if (!snap.exists()) return;
+  const data = snap.val();
+  if (data.turn !== myRole) { toast('상대방 차례입니다'); return; }
+  if (data.winner) return;
+
+  const idx = row * BOARD + col;
+  if (data.board[idx] !== 0) { toast('이미 돌이 있습니다'); return; }
+
+  const board = [...data.board];
+  board[idx] = myRole === 'black' ? 1 : 2;
+
+  const winner = checkWin(board, idx) ? myRole : null;
+  await update(roomRef, {
+    board,
+    turn: myRole === 'black' ? 'white' : 'black',
+    lastMove: idx,
+    winner
+  });
+}
+
+// ── 승리 판정 ─────────────────────────────────────────────────
+function checkWin(board, idx) {
+  const color = board[idx];
+  const row = Math.floor(idx / BOARD), col = idx % BOARD;
+  const dirs = [[0,1],[1,0],[1,1],[1,-1]];
+  for (const [dr, dc] of dirs) {
+    let count = 1;
+    for (let d = 1; d < 5; d++) {
+      const r = row + dr*d, c = col + dc*d;
+      if (r<0||r>=BOARD||c<0||c>=BOARD||board[r*BOARD+c]!==color) break;
+      count++;
+    }
+    for (let d = 1; d < 5; d++) {
+      const r = row - dr*d, c = col - dc*d;
+      if (r<0||r>=BOARD||c<0||c>=BOARD||board[r*BOARD+c]!==color) break;
+      count++;
+    }
+    if (count >= 5) return true;
+  }
+  return false;
+}
+
+// ── 결과 모달 ─────────────────────────────────────────────────
+function showResultModal(data) {
+  const winName = data.winner === 'black' ? data.black.name : data.white.name;
+  const iWon = data.winner === myRole;
+  document.getElementById('modal-title').textContent = iWon ? '🎉 승리!' : '😢 패배';
+  document.getElementById('modal-msg').textContent = `${winName}이(가) 이겼습니다!`;
+  document.getElementById('result-modal').classList.add('open');
+}
+
+document.getElementById('btn-play-again').addEventListener('click', async () => {
+  document.getElementById('result-modal').classList.remove('open');
+  const snap = await get(roomRef);
+  if (!snap.exists()) return;
+  const data = snap.val();
+  await update(roomRef, {
+    board: Array(BOARD*BOARD).fill(0),
+    turn: 'black',
+    lastMove: null,
+    winner: null
+  });
+});
+
+document.getElementById('btn-lobby').addEventListener('click', () => {
+  document.getElementById('result-modal').classList.remove('open');
+  goLobby();
+});
+
+// ── 나가기 ────────────────────────────────────────────────────
+document.getElementById('btn-leave').addEventListener('click', goLobby);
+document.getElementById('btn-leave-lobby').addEventListener('click', goLobby);
+
+async function goLobby() {
+  if (unsubRoom) { unsubRoom(); unsubRoom = null; }
+  if (roomRef) {
+    // 방장이면 방 삭제, 게스트면 white 제거
+    if (myRole === 'black') {
+      await remove(roomRef);
+    } else {
+      await update(roomRef, { white: null }).catch(() => {});
+    }
+    roomRef = null;
+  }
+  gameOver = false;
+  myRole = null;
+  document.getElementById('result-modal').classList.remove('open');
+  show('lobby-screen');
+}
+
+// ── 코드 복사 ─────────────────────────────────────────────────
+document.getElementById('btn-copy-code').addEventListener('click', () => {
+  navigator.clipboard.writeText(roomCode).then(() => toast('코드 복사됨!')).catch(() => {
+    toast(roomCode);
+  });
+});
+
+// ── 창 크기 변화 대응 ─────────────────────────────────────────
+window.addEventListener('resize', () => {
+  get(roomRef || ref(db, 'noop')).then(snap => {
+    if (snap.exists()) renderGame(snap.val());
+  }).catch(() => {});
+});
+</script>
+</body>
+</html>
