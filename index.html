@@ -314,6 +314,8 @@
   </div>
 
   <div class="msg-bar" id="msg-bar">상대방의 접속을 기다리는 중...</div>
+  <button class="btn btn-primary" id="btn-place" style="display:none;margin-bottom:8px">여기에 놓기 ✓</button>
+  <button class="btn" id="btn-cancel-place" style="display:none;background:transparent;border:1px solid #333;color:#666;font-size:13px;margin-bottom:8px">선택 취소</button>
   <button class="btn" id="btn-leave">방 나가기</button>
 </div>
 
@@ -370,11 +372,16 @@ function show(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById(id).classList.add('active');
 }
-function toast(msg) {
+function toast(msg, ms = 2000) {
   const t = document.getElementById('toast');
   t.textContent = msg;
   t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 2000);
+  setTimeout(() => t.classList.remove('show'), ms);
+}
+function showError(prefix, err) {
+  console.error(prefix, err);
+  const code = (err && (err.code || err.message)) || String(err);
+  toast(prefix + ': ' + code, 6000);
 }
 
 // ── 방 코드 생성 ───────────────────────────────────────────────
@@ -391,14 +398,19 @@ document.getElementById('btn-create').addEventListener('click', async () => {
 
   const initData = {
     black: { id: myId, name: myName },
-    white: null,
     board: Array(BOARD * BOARD).fill(0),
     turn: 'black',
-    winner: null,
     created: Date.now()
   };
-  await set(roomRef, initData);
-  onDisconnect(roomRef).remove();
+  try {
+    await set(roomRef, initData);
+    onDisconnect(roomRef).remove();
+  } catch (err) {
+    roomRef = null;
+    myRole = null;
+    showError('방 만들기 실패', err);
+    return;
+  }
 
   document.getElementById('display-code').textContent = roomCode;
   show('waiting-screen');
@@ -410,15 +422,22 @@ document.getElementById('btn-join').addEventListener('click', async () => {
   const code = document.getElementById('input-code').value.trim().toUpperCase();
   if (code.length !== 4) { toast('방 코드는 4자리입니다'); return; }
 
-  const snap = await get(ref(db, 'rooms/' + code));
-  if (!snap.exists()) { toast('존재하지 않는 방입니다'); return; }
-  const data = snap.val();
-  if (data.white) { toast('이미 가득 찬 방입니다'); return; }
+  try {
+    const snap = await get(ref(db, 'rooms/' + code));
+    if (!snap.exists()) { toast('존재하지 않는 방입니다'); return; }
+    const data = snap.val();
+    if (data.white) { toast('이미 가득 찬 방입니다'); return; }
 
-  roomCode = code;
-  myRole = 'white';
-  roomRef = ref(db, 'rooms/' + roomCode);
-  await update(roomRef, { white: { id: myId, name: myName } });
+    roomCode = code;
+    myRole = 'white';
+    roomRef = ref(db, 'rooms/' + roomCode);
+    await update(roomRef, { white: { id: myId, name: myName } });
+  } catch (err) {
+    roomRef = null;
+    myRole = null;
+    showError('방 참가 실패', err);
+    return;
+  }
 
   document.getElementById('display-code').textContent = roomCode;
   show('waiting-screen');
@@ -550,6 +569,13 @@ function drawBoard(boardArr, lastMove) {
 
 function renderGame(data) {
   const board = data.board || Array(BOARD*BOARD).fill(0);
+  // 내 차례가 아니면 선택 초기화
+  if (data.turn !== myRole || data.winner) {
+    selectedIdx = -1;
+    currentBoardData = null;
+    document.getElementById('btn-place').style.display = 'none';
+    document.getElementById('btn-cancel-place').style.display = 'none';
+  }
   drawBoard(board, data.lastMove ?? -1);
   gameOver = !!data.winner;
 
@@ -579,17 +605,48 @@ function renderGame(data) {
   }
 }
 
+// ── 선택 상태 ─────────────────────────────────────────────────
+let selectedIdx = -1;
+let currentBoardData = null;
+
+function setSelected(idx, boardArr) {
+  selectedIdx = idx;
+  // 미리보기 그리기
+  drawBoard(boardArr, -1);
+  if (idx >= 0) {
+    const row = Math.floor(idx / BOARD), col = idx % BOARD;
+    const cx = boardPad + col * cellSize;
+    const cy = boardPad + row * cellSize;
+    const r = cellSize * 0.44;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fillStyle = myRole === 'black' ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.5)';
+    ctx.fill();
+    ctx.strokeStyle = myRole === 'black' ? '#555' : '#bbb';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+  // 버튼 표시
+  document.getElementById('btn-place').style.display = idx >= 0 ? 'block' : 'none';
+  document.getElementById('btn-cancel-place').style.display = idx >= 0 ? 'block' : 'none';
+}
+
 // ── 클릭/터치 처리 ────────────────────────────────────────────
 canvas.addEventListener('click', handleTap);
 canvas.addEventListener('touchend', e => {
   e.preventDefault();
   const t = e.changedTouches[0];
-  const rect = canvas.getBoundingClientRect();
-  handleTap({ clientX: t.clientX, clientY: t.clientY, _fromTouch: true });
+  handleTap({ clientX: t.clientX, clientY: t.clientY });
 }, { passive: false });
 
 async function handleTap(e) {
   if (gameOver) return;
+  const snap = await get(roomRef);
+  if (!snap.exists()) return;
+  const data = snap.val();
+  if (data.turn !== myRole) { toast('상대방 차례입니다'); return; }
+  if (data.winner) return;
+
   const rect = canvas.getBoundingClientRect();
   const scaleX = canvas.width / rect.width;
   const scaleY = canvas.height / rect.height;
@@ -600,26 +657,48 @@ async function handleTap(e) {
   const row = Math.round((py - boardPad) / cellSize);
   if (col < 0 || col >= BOARD || row < 0 || row >= BOARD) return;
 
-  const snap = await get(roomRef);
-  if (!snap.exists()) return;
-  const data = snap.val();
-  if (data.turn !== myRole) { toast('상대방 차례입니다'); return; }
-  if (data.winner) return;
-
   const idx = row * BOARD + col;
   if (data.board[idx] !== 0) { toast('이미 돌이 있습니다'); return; }
+
+  currentBoardData = data;
+  setSelected(idx, data.board);
+
+  const msg = document.getElementById('msg-bar');
+  msg.textContent = '이 자리에 놓을까요?';
+}
+
+// ── 놓기 확인 버튼 ────────────────────────────────────────────
+document.getElementById('btn-place').addEventListener('click', async () => {
+  if (selectedIdx < 0 || !currentBoardData) return;
+  const data = currentBoardData;
+  const idx = selectedIdx;
 
   const board = [...data.board];
   board[idx] = myRole === 'black' ? 1 : 2;
 
   const winner = checkWin(board, idx) ? myRole : null;
+  selectedIdx = -1;
+  currentBoardData = null;
+  document.getElementById('btn-place').style.display = 'none';
+  document.getElementById('btn-cancel-place').style.display = 'none';
+
   await update(roomRef, {
     board,
     turn: myRole === 'black' ? 'white' : 'black',
     lastMove: idx,
     winner
   });
-}
+});
+
+// ── 선택 취소 버튼 ────────────────────────────────────────────
+document.getElementById('btn-cancel-place').addEventListener('click', () => {
+  if (!currentBoardData) return;
+  selectedIdx = -1;
+  drawBoard(currentBoardData.board, currentBoardData.lastMove ?? -1);
+  document.getElementById('btn-place').style.display = 'none';
+  document.getElementById('btn-cancel-place').style.display = 'none';
+  document.getElementById('msg-bar').textContent = '내 차례입니다. 돌을 놓으세요!';
+});
 
 // ── 승리 판정 ─────────────────────────────────────────────────
 function checkWin(board, idx) {
